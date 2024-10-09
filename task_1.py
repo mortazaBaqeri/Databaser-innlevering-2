@@ -1,6 +1,9 @@
 from DbConnector import DbConnector
 from tabulate import tabulate
 import os
+from datetime import datetime
+import pandas as pd
+import fnmatch
 
 class Tasks:
 
@@ -31,33 +34,22 @@ class Tasks:
         self.cursor.execute(query)
         self.db_connection.commit()
 
-
-    # def insert_data(self, table_name):
-    #     # Define the path to the 'labeled_ids.txt' file
-    #     file_path = os.path.join( './dataset/dataset/labeled_ids.txt')
-        
-    #     if not os.path.exists(file_path):
-    #         print(f"File not found: {file_path}")
-    #         return
-
-    #     with open(file_path, 'r') as file:
-    #         # Assuming the file contains names (one per line)
-    #         lines = file.readlines()
-
-    #     # Strip whitespace characters like \n from each line
-    #     names = [line.strip() for line in lines]
-
-    #     for name in names:
-    #         query = "INSERT INTO %s (name) VALUES ('%s')"
-    #         query = query.replace("%s", table_name).replace("%s", name)
-    #         self.cursor.execute(query)
-
-    #     self.db_connection.commit()
-    #     print(f"Data from {file_path} inserted successfully.")
+    def create_trackpoint_table(self):
+        query = """"CREATE TABLE IF NOT EXISTS Trackpoint (
+                    id INT PRIMARY KEY,
+                    activity_id INT,
+                    lat DOUBLE,
+                    lon DOUBLE,
+                    altitude DOUBLE,
+                    date_days DOUBLE,
+                    date_time DATETIME,
+                    FOREIGN KEY (activity_id) REFERENCES Activity(id));
+                """
+        self.cursor.execute(query)
+        self.db_connection.commit()
 
 
-
-    def insert_data_from_folders(self, root_path, table_name='User'):
+    def insert_users(self, root_path, table_name='User'):
         try:
             user_ids = []
 
@@ -109,6 +101,116 @@ class Tasks:
         except Exception as e:
             print(f"An error occurred: {e}")
 
+
+    def format_label_data_from_file(self, file_path):
+        lables_path = os.path.join(file_path, "labels.txt")
+
+        # Open the file and read its contents
+        with open(lables_path, 'r') as file:
+            lines = file.readlines()
+        
+        # Skip the first line (header) and process the remaining lines
+        for line in lines[1:]:
+            parts = line.split()
+
+            if len(parts) >= 5:  # Ensure the line has at least 5 parts (start date, start time, end date, end time, transportation mode)
+                start_time = parts[0] + " " + parts[1]
+                end_time = parts[2] + " " + parts[3]
+                transportation_mode = parts[4]
+
+                # Format the start and end times
+                formatted_start_time = start_time.replace("/", "").replace(":", "").replace(" ", "")
+                formatted_end_time = end_time.replace("/", "").replace(":", "").replace(" ", "")
+
+
+                # # Print the formatted times and transportation mode
+                # print(f"Start time: {formatted_start_time}")
+                # print(f"End time: {formatted_end_time}")
+                # print(f"Transportation mode: {transportation_mode}\n")
+
+                #return formatted_start_time, formatted_end_time, transportation_mode
+                
+
+    # Function to insert and match activities by traversing the dataset and matching transportation modes
+    def insert_and_match_activities(self):
+        base_path = "./dataset/dataset/Data/010"  # Example path to user folder
+        labels_path = os.path.join(base_path, "labels.txt")
+
+        # Read the labels.txt file and ensure proper parsing
+        if os.path.exists(labels_path):
+            try:
+                # Ensure that tabs or spaces are correctly handled with sep='\t' or sep=r'\s+'
+                labels = pd.read_csv(labels_path, sep=r'\t|\s+', engine='python', header=None, 
+                                     names=['start_time', 'end_time', 'transportation_mode'])
+                
+                print(f"Labels loaded from {labels_path}:")
+
+                # Correctly print out the parsed data
+                for index, row in labels.iterrows():
+                    print(f"Start time: {row['start_time']}")
+                    print(f"End time: {row['end_time']}")
+                    print(f"Transportation mode: {row['transportation_mode']}")
+                    print(f"Formatted start time: {self.format_time_string(row['start_time'])}")
+                    print()  # For an empty line between each group
+
+            except Exception as e:
+                print(f"Failed to process labels.txt: {e}")
+                return
+
+        # Now, process the .plt files in the "Trajectory" folder
+        trajectory_path = os.path.join(base_path, "Trajectory")
+        if not os.path.exists(trajectory_path):
+            print(f"Trajectory folder not found for user at {trajectory_path}")
+            return
+
+        # Loop through all .plt files in the Trajectory folder
+        plt_files = os.listdir(trajectory_path)
+        if len(plt_files) == 0:
+            print(f"No .plt files found in {trajectory_path}")
+            return
+
+        print(f"Found {len(plt_files)} .plt files in {trajectory_path}")
+        for plt_file in plt_files:
+            if plt_file.endswith(".plt"):
+                plt_file_name = plt_file[:-4]  # Remove the .plt extension
+                print(f"Processing .plt file: {plt_file_name}")
+
+                # Check if the .plt file matches any formatted start_time in labels.txt
+                matched_label = labels[labels['start_time_fmt'] == plt_file_name]
+
+                if not matched_label.empty:
+                    # Extract matching data
+                    transportation_mode = matched_label['transportation_mode'].values[0]
+                    start_time = matched_label['start_time'].values[0]
+                    end_time = matched_label['end_time'].values[0]
+
+                    # Print match details
+                    print(f"Matched: {plt_file_name}, Start: {start_time}, End: {end_time}, Mode: {transportation_mode}")
+                else:
+                    # Print no match details
+                    print(f"No match for {plt_file_name}")
+
+
+    # Function to insert activity data into the database
+    def insert_activity(self, user_id, transportation_mode, start_time, end_time):
+        query = """
+        INSERT INTO Activity (user_id, transportation_mode, start_date_time, end_date_time)
+        VALUES (%s, %s, %s, %s)
+        """
+        # Set transportation_mode as None if there's no label
+        self.cursor.execute(query, (user_id, transportation_mode, start_time, end_time))
+        self.db_connection.commit()
+
+
+    def has_more_than_2500_lines(self, plt_file_path):
+        with open(plt_file_path, 'r') as file:
+            # Skip the first 6 lines (header)
+            for _ in range(6):
+                next(file, None)
+            # Count remaining lines, return True if more than 2500
+            return sum(1 for _ in file) > 2500
+
+
     def drop_table(self, table_name):
         try:
             print(f"Dropping table {table_name} if it exists...")
@@ -118,6 +220,7 @@ class Tasks:
             print(f"Table {table_name} dropped successfully.")
         except Exception as e:
             print(f"An error occurred: {e}")
+
 
     def fetch_data(self, table_name):
         query = "SELECT * FROM %s"
@@ -131,36 +234,47 @@ class Tasks:
         print(tabulate(rows, headers=self.cursor.column_names))
         return rows
 
- 
-
     def show_tables(self):
         self.cursor.execute("SHOW TABLES")
         rows = self.cursor.fetchall()
         print(tabulate(rows, headers=self.cursor.column_names))
 
+    def find_matching_files(directory, pattern):
+        # Iterate over all files in the directory
+        for filename in os.listdir(directory):
+            # Check if the filename matches the .plt pattern
+            if fnmatch.fnmatch(filename, '*.plt'):
+                # Check if the given string matches the filename (without extension)
+                if pattern in filename:
+                    return True                
+                
+
 def main():
     program = None
     try:
         program = Tasks()
+
+        program.drop_table("Activity")
+
+
+        base_path = "./dataset/dataset/Data"  # Path to the Data directory with user folders
+        labeled_ids_path = "./dataset/dataset/labeled_ids.txt"  # Path to labeled_ids.txt
             
         program.drop_table('User')
         program.create_table('User')
-        program.insert_data_from_folders('./dataset/dataset/')
+        program.insert_users('./dataset/dataset/')
         program.update_user_table('./dataset/dataset/labeled_ids.txt')
+
+
         program.create_activity_table()
+        # Insert and match activities with transportation modes
+        program.insert_and_match_activities()
 
-        # fetch_choice = input(f"Do you want to fetch data from {table_name}? (yes/no): ")
-        # if fetch_choice.lower() == 'yes':
-        #     _ = program.fetch_data(table_name=table_name)
+        
+        # program.drop_table("Trackpoint")
+        # program.create_trackpoint_table()
 
-        # drop_choice = input(f"Do you want to drop the table {table_name}? (yes/no): ")
-        # if drop_choice.lower() == 'yes':
-        #     program.drop_table(table_name=table_name)
 
-        # Showing the remaining tables in the database
-        # show_choice = input("Do you want to list the current tables? (yes/no): ")
-        # if show_choice.lower() == 'yes':
-        #     program.show_tables()
 
     except Exception as e:
         print("ERROR: Failed to use the database:", e)
