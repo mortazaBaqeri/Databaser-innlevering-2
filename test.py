@@ -82,7 +82,7 @@ class Gurjot:
 
 
     def insert_trackpoints(self, start_time, end_time, file_name, activity_id):
-        print("Trying to insert trackpoints for file:", file_name)
+        print("[DEBUG] : Trying to insert trackpoints for file:", file_name)
 
         try:
             # Convert start_time and end_time to datetime objects with the correct format
@@ -115,7 +115,7 @@ class Gurjot:
 
                         # Check if current row matches the start time
                         if date_time_dt == start_time_dt:
-                            print(f"[INFO] Start time found for activity in file {file_name}, '{start_time_dt}'")
+                            print(f"[DEBUG] : Start time found for activity in file {file_name}, '{start_time_dt}'")
                             started = True  # Start collecting data
 
                         if started:
@@ -123,7 +123,7 @@ class Gurjot:
 
                             # Stop collecting data after end_time
                             if date_time_dt == end_time_dt:
-                                print(f"[INFO] End time found for activity in file {file_name}, '{end_time_dt}'")
+                                print(f"[DEBUG] : End time found for activity in file {file_name}, '{end_time_dt}'")
                                 break
 
                     except Exception as parse_error:
@@ -210,8 +210,8 @@ class Gurjot:
                         trajectory_datetimes = self.extract_date_time_from_trejectories2(plt_file_path)
                         
                         if self.check_date_time_exists2(start_date_time, trajectory_datetimes) and self.check_date_time_exists2(end_date_time, trajectory_datetimes):
-                            print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
-                            print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
+                            print(f"[DEBUG] : Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
+                            print(f"[DEBUG] : It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
 
                             activity_id = self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
                             self.insert_trackpoints(start_date_time, end_date_time, plt_file_path, activity_id)
@@ -227,7 +227,6 @@ class Gurjot:
                             continue
                         
                         plt_file_path = os.path.join(root, file)
-                        print("Processing file:", plt_file_path)
 
                         if self.has_more_than_2500_lines(plt_file_path):
                             print(f"Skipping {file} as it has more than 2500 lines.")
@@ -336,7 +335,7 @@ def main():
             
             # Ensure it's a directory
             if os.path.isdir(folder_path):
-                print(f"Processing folder: {folder_name}")
+                print(f"[PROGRESS] : Processing folder: {folder_name}")
 
                 # Call your function to process the .plt files in the current folder
                 program.search_and_match_plt_files(folder_path)
