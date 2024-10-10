@@ -36,7 +36,7 @@ class Gurjot:
 
     def create_trackpoint_table(self):
         query = """"CREATE TABLE IF NOT EXISTS Trackpoint (
-                    id INT PRIMARY KEY,
+                    id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
                     activity_id INT,
                     lat DOUBLE,
                     lon DOUBLE,
@@ -102,7 +102,7 @@ class Gurjot:
     # should return in format "date,time"
     def extract_date_time_from_trejectories2(self, file_path):
 
-        date_time_set = set()  # Using a set for fast lookup
+        date_time_set = []  # Using a set for fast lookup
 
         # Open the file and read its contents
         with open(file_path, 'r') as file:
@@ -115,7 +115,7 @@ class Gurjot:
                 date = parts[5].strip()  # Date is in the 6th column
                 time = parts[6].strip()  # Time is in the 7th column
                 date_time = date + "," + time
-                date_time_set.add(date_time)  # Add (date, time) tuple to the set, example: ('2007-08-04', '04:11:30')
+                date_time_set.append(date_time)  # Add (date, time) tuple to the set, example: ('2007-08-04', '04:11:30')
 
         return date_time_set
 
@@ -127,35 +127,63 @@ class Gurjot:
         return query_date_time in date_time_set
 
 
-    def search_and_match_plt_files(self, base_directory, labels_file_path):
-
-        labels = self.parse_labels_file(labels_file_path)  # example: [('2007/06/26 11:32:29', '2007/06/26 11:40:29', 'bus')]
-        user_id = base_directory.split("/")[4]
+    def check_label_file(self, base_dir):
+        # Construct the full path to 'label.txt'
+        labels_file_path = os.path.join(base_dir, 'labels.txt')
         
-        for label in labels:
-            start_date_time = label[0].replace('/', '-').replace(' ', ',')
-            end_date_time = label[1].replace('/', '-').replace(' ', ',')
-            transportation_mode = label[2]
+        # Check if the file exists
+        return os.path.isfile(labels_file_path)
 
-            for root, _, files in os.walk(base_directory):
-                for file in files:
-                    if not file.endswith('.plt'):
-                        continue
-                    
-                    plt_file_path = os.path.join(root, file)
-                    if self.has_more_than_2500_lines(plt_file_path):
-                        continue
-                    
-                    date_time = self.extract_date_time_from_trejectories2(plt_file_path)
-                    
-                    if self.check_date_time_exists2(start_date_time, date_time) and self.check_date_time_exists2(end_date_time, date_time):
-                        print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
-                        print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
-                        self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
-                        break  # Move to the next label after finding both start and end
-                else:
-                    continue  # Only runs if the inner loop wasn't broken
-                break  # Break the outer loop when a match is found
+
+
+    def search_and_match_plt_files(self, base_directory):
+        user_id = base_directory.split("/")[4]
+
+        if (self.check_label_file(base_directory)):
+            labels_file_path = os.path.join(base_directory, 'labels.txt')
+            labels = self.parse_labels_file(labels_file_path)  # example: [('2007/06/26 11:32:29', '2007/06/26 11:40:29', 'bus')]
+    
+            for label in labels:
+                start_date_time = label[0].replace('/', '-').replace(' ', ',')
+                end_date_time = label[1].replace('/', '-').replace(' ', ',')
+                transportation_mode = label[2]
+
+                for root, _, files in os.walk(base_directory):
+                    for file in files:
+                        if not file.endswith('.plt'):
+                            continue
+                        
+                        plt_file_path = os.path.join(root, file)
+                        if self.has_more_than_2500_lines(plt_file_path):
+                            continue
+                        
+                        date_time = self.extract_date_time_from_trejectories2(plt_file_path)
+                        
+                        if self.check_date_time_exists2(start_date_time, date_time) and self.check_date_time_exists2(end_date_time, date_time):
+                            print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
+                            print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
+                            self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
+                            break  # Move to the next label after finding both start and end
+                    else:
+                        continue  # Only runs if the inner loop wasn't broken
+                    break  # Break the outer loop when a match is found
+        else:
+            trajectory_file_path = os.path.join(base_directory, 'Trajectory')
+            for root, _, files in os.walk(trajectory_file_path):
+                    for file in files:
+                        print("File ", file)
+                        if not file.endswith('.plt'):
+                            continue
+                        
+                        plt_file_path = os.path.join(root, file)
+                        print("Processing file:", plt_file_path)
+
+                        if self.has_more_than_2500_lines(plt_file_path):
+                            print(f"Skipping {file} as it has more than 2500 lines.")
+                            continue
+                        
+                        date_time = self.extract_date_time_from_trejectories2(plt_file_path)
+                        self.insert_activity(user_id, "NULL", date_time[0], date_time[-1])
 
 
     def insert_activity(self, user_id, transportation_mode, start_date_time, end_date_time):
@@ -237,9 +265,8 @@ def main():
         program.update_user_table('./dataset/dataset/labeled_ids.txt')
         program.create_activity_table()
 
-        base_directory = "./dataset/dataset/Data/010/Trajectory"  # Folder containing .plt files
-        labels_file_path = "./dataset/dataset/Data/010/labels.txt"  # Path to labels.txt  
-        program.search_and_match_plt_files(base_directory, labels_file_path)
+        base_directory = "./dataset/dataset/Data/001/"
+        program.search_and_match_plt_files(base_directory)
 
 
         # Insert and match activities with transportation modes
