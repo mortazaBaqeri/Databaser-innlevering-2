@@ -58,7 +58,7 @@ class Gurjot:
         return time_string.strip()
         
 
-    def parse_labels_file(self, labels_file_path):        # todo, make a hashmap for better performance
+    def parse_labels_file(self, labels_file_path):
         labels = []
         with open(labels_file_path, 'r') as file:
             lines = file.readlines()
@@ -79,45 +79,9 @@ class Gurjot:
                     next(file, None)
                 # Count remaining lines, return True if more than 2500
                 return sum(1 for _ in file) > 2500
-            
-
-    def insert_tpoints(self, trajectory_file):
-        # Traverse the data directory to find all trajectory files and insert data directly
-            try:
-                with open(trajectory_file, 'r') as file:
-                    reader = csv.reader(file)
-                    for _ in range(6):
-                        next(reader)  # Skip header lines
-                    
-                    for row in reader:            
-                        if len(row) < 7:
-                            continue  # Skip invalid lines
-
-                        latitude = float(row[0])
-                        longitude = float(row[1])
-                        altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
-                        date_days = float(row[4])
-                        date_time = f"{row[5]} {row[6]}"
-
-                        print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time}")
-
-                        try:
-                            # Convert date_time to a proper datetime format
-                            date_time = datetime.datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
-                            # Insert trackpoint directly into the Trackpoint table
-                            trackpoint_query = "INSERT INTO Trackpoint (latitude, longitude, altitude, date_days, date_time) VALUES (%s, %s, %s, %s, %s)"
-                            self.cursor.execute(trackpoint_query, (latitude, longitude, altitude, date_days, date_time.strftime("%Y-%m-%d %H:%M:%S")))
-                        except ValueError as ve:
-                            logging.warning(f"Skipping trackpoint due to datetime format error: {ve}")
-                            continue
-                # Commit the transaction after processing each file
-                self.db_connection.commit()
-            except Exception as e:
-                        logging.error(f"Error processing file {trajectory_file}: {e}")
 
 
-
-    def insert_trackpoints(self, start_time, end_time, file_name):
+    def insert_trackpoints(self, start_time, end_time, file_name, activity_id):
         print("Trying to insert trackpoints for file:", file_name)
 
         try:
@@ -147,8 +111,7 @@ class Gurjot:
                         date_time_str = f"{row[5]},{row[6]}"  # Note the comma between date and time
                         date_time_dt = datetime.strptime(date_time_str, "%Y-%m-%d,%H:%M:%S")  # Adjusted format
 
-                        # Debug print
-                        print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_dt}")
+                        # print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_dt}")
 
                         # Check if current row matches the start time
                         if date_time_dt == start_time_dt:
@@ -156,7 +119,7 @@ class Gurjot:
                             started = True  # Start collecting data
 
                         if started:
-                            list_to_save.append((1, latitude, longitude, altitude, date_days, date_time_str))
+                            list_to_save.append((activity_id, latitude, longitude, altitude, date_days, date_time_str))
 
                             # Stop collecting data after end_time
                             if date_time_dt == end_time_dt:
@@ -249,9 +212,9 @@ class Gurjot:
                         if self.check_date_time_exists2(start_date_time, trajectory_datetimes) and self.check_date_time_exists2(end_date_time, trajectory_datetimes):
                             print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
                             print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
-                            self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
-                            self.insert_trackpoints(start_date_time, end_date_time, plt_file_path)
-                            return
+
+                            activity_id = self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
+                            self.insert_trackpoints(start_date_time, end_date_time, plt_file_path, activity_id)
                             break  # Move to the next label after finding both start and end
                     else:
                         continue  # Only runs if the inner loop wasn't broken
@@ -260,7 +223,6 @@ class Gurjot:
             trajectory_file_path = os.path.join(base_directory, 'Trajectory')
             for root, _, files in os.walk(trajectory_file_path):
                     for file in files:
-                        print("File ", file)
                         if not file.endswith('.plt'):
                             continue
                         
@@ -272,14 +234,23 @@ class Gurjot:
                             continue
                         
                         date_time = self.extract_date_time_from_trejectories2(plt_file_path)
-                        self.insert_activity(user_id, "NULL", date_time[0], date_time[-1])
+                        activity_id = self.insert_activity(user_id, "NULL", date_time[0], date_time[-1])
+                        self.insert_trackpoints(date_time[0], date_time[-1], plt_file_path, activity_id)
 
 
     def insert_activity(self, user_id, transportation_mode, start_date_time, end_date_time):
         query = """INSERT INTO Activity (user_id, transportation_mode, start_date_time, end_date_time)
                 VALUES (%s, %s, %s, %s);"""
         self.cursor.execute(query, (user_id, transportation_mode, start_date_time, end_date_time))
+
+        # Commit the transaction
         self.db_connection.commit()
+
+        # Fetch the last inserted ID
+        activity_id = self.cursor.lastrowid  # This works for MySQL and SQLite
+
+        return activity_id
+    
 
     def drop_table(self, table_name):
         try:
@@ -342,28 +313,33 @@ def main():
     try:
         program = Gurjot()
 
-        base_directory = "./dataset/dataset/Data/010/"
+        # Base path to the Data directory with user folders
+        base_directory = "./dataset/dataset/Data/"
 
-
+        # Drop the tables before inserting new data
         program.drop_table("Trackpoint")
         program.drop_table("Activity")
         program.drop_table('User')
 
-        # base_path = "./dataset/dataset/Data"  # Path to the Data directory with user folders
-        # labeled_ids_path = "./dataset/dataset/labeled_ids.txt"  # Path to labeled_ids.txt
-
+        # Create tables
         program.create_user_table()
         program.create_activity_table()
         program.create_trackpoint_table()
 
-
+        # Insert users and update user table with labeled data
         program.insert_users('./dataset/dataset/')
         program.update_user_table('./dataset/dataset/labeled_ids.txt')
 
-        program.search_and_match_plt_files(base_directory)
+        # Loop through all subdirectories (e.g., '000', '001', etc.)
+        for folder_name in sorted(os.listdir(base_directory)):
+            folder_path = os.path.join(base_directory, folder_name)
+            
+            # Ensure it's a directory
+            if os.path.isdir(folder_path):
+                print(f"Processing folder: {folder_name}")
 
-
-
+                # Call your function to process the .plt files in the current folder
+                program.search_and_match_plt_files(folder_path)
 
     except Exception as e:
         print("ERROR: Failed to use the database:", e)
@@ -374,55 +350,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # base_directory = "./dataset/dataset/Data/010/Trajectory"  # Folder containing .plt files
-    # labels_file_path = "./dataset/dataset/Data/010/labels.txt"  # Path to labels.txt
-
-    # search_and_match_plt_files(base_directory, labels_file_path)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # Example usage
-    # file_path = "/Users/mortaza/Documents/Databaser innlevering 2/dataset/dataset/Data/010/Trajectory/20070804033032.plt"  # Replace this with the actual path to your .plt file
-
-    # # Extract (date, time) from the .plt file
-    # date_time_set = extract_date_time_from_trejectories(file_path)
-
-    # # Check if a specific (date, time) exists
-    # query_date = "2007-08-04"
-    # query_time = "03:30:45"
-    # print(check_date_time_exists(date_time_set, query_date, query_time))
-
-
-    # file_path = "/Users/mortaza/Documents/Databaser innlevering 2/dataset/dataset/Data/010/Trajectory/20070804033032.plt"  # Replace this with the actual path to your .plt file
-    # date_time_set = extract_date_time_from_trejectories2(file_path)
-    # print(date_time_set)
