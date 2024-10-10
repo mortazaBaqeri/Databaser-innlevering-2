@@ -62,7 +62,7 @@ class Gurjot:
         labels = []
         with open(labels_file_path, 'r') as file:
             lines = file.readlines()
-            # jump over first line
+            # Skip the first line (header)
             for line in lines[1:]:
                 parts = line.strip().split()
                 if len(parts) >= 3:
@@ -70,7 +70,8 @@ class Gurjot:
                     end_time = self.clean_time_format(parts[2] + " " + parts[3])
                     transportation_mode = parts[4]
                     labels.append((start_time, end_time, transportation_mode))
-        return labels
+        return labels # example [('2007/06/26 11:32:29', '2007/06/26 11:40:29', 'bus')]
+    
 
     def has_more_than_2500_lines(self, plt_file_path):
             with open(plt_file_path, 'r') as file:
@@ -96,11 +97,11 @@ class Gurjot:
 
                 print("File opened successfully. Processing trackpoints...")
                 list_to_save = []
-                started = False  # Flag to indicate when to start collecting data
+                started = False  # Flag to indicate when to start collecting trackpoints
 
                 for row in reader:
                     if len(row) < 7:
-                        continue  # Skip invalid lines
+                        continue  # Skip the first 6 lines (header)
 
                     try:
                         # Parse data from the row
@@ -111,12 +112,10 @@ class Gurjot:
                         date_time_str = f"{row[5]},{row[6]}"  # Note the comma between date and time
                         date_time_dt = datetime.strptime(date_time_str, "%Y-%m-%d,%H:%M:%S")  # Adjusted format
 
-                        # print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_dt}")
-
                         # Check if current row matches the start time
                         if date_time_dt == start_time_dt:
                             print(f"[DEBUG] : Start time found for activity in file {file_name}, '{start_time_dt}'")
-                            started = True  # Start collecting data
+                            started = True  # Start collecting datapoints
 
                         if started:
                             list_to_save.append((activity_id, latitude, longitude, altitude, date_days, date_time_str))
@@ -133,7 +132,7 @@ class Gurjot:
 
                 if list_to_save:
                     try:
-                        # Insert all trackpoints into the Trackpoint table at once
+                        # Insert all trackpoints into the Trackpoint table at once for faster processing
                         trackpoint_query = """
                             INSERT INTO Trackpoint (
                                 activity_id, latitude, longitude, altitude, date_days, date_time
@@ -143,7 +142,6 @@ class Gurjot:
                     except Exception as db_error:
                         logging.error(f"Error inserting trackpoints: {db_error}")
                         
-                # Commit the transaction after processing each file
                 self.db_connection.commit()
 
         except Exception as e:
