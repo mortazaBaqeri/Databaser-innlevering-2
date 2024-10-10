@@ -6,6 +6,9 @@ import pandas as pd
 import fnmatch
 import logging
 import csv
+import csv
+import logging
+from datetime import datetime
 
 class Gurjot:
 
@@ -113,15 +116,20 @@ class Gurjot:
                         logging.error(f"Error processing file {trajectory_file}: {e}")
 
 
+
     def insert_trackpoints(self, start_time, end_time, file_name):
         print("Trying to insert trackpoints for file:", file_name)
 
         try:
+            # Convert start_time and end_time to datetime objects with the correct format
+            start_time_dt = datetime.strptime(start_time, "%Y-%m-%d,%H:%M:%S")
+            end_time_dt = datetime.strptime(end_time, "%Y-%m-%d,%H:%M:%S")
+
             with open(file_name, 'r') as file:
                 reader = csv.reader(file)
                 for _ in range(6):
                     next(reader)  # Skip header lines
-                    
+
                 print("File opened successfully. Processing trackpoints...")
                 list_to_save = []
                 started = False  # Flag to indicate when to start collecting data
@@ -130,25 +138,35 @@ class Gurjot:
                     if len(row) < 7:
                         continue  # Skip invalid lines
 
-                    latitude = float(row[0])
-                    longitude = float(row[1])
-                    altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
-                    date_days = float(row[4])
-                    date_time_str = f"{row[5]} {row[6]}"
+                    try:
+                        # Parse data from the row
+                        latitude = float(row[0])
+                        longitude = float(row[1])
+                        altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
+                        date_days = float(row[4])
+                        date_time_str = f"{row[5]},{row[6]}"  # Note the comma between date and time
+                        date_time_dt = datetime.strptime(date_time_str, "%Y-%m-%d,%H:%M:%S")  # Adjusted format
 
-                    print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_str}")
+                        # Debug print
+                        print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_dt}")
 
-                    if date_time_str == start_time:
-                        started = True  # Start collecting data
+                        # Check if current row matches the start time
+                        if date_time_dt == start_time_dt:
+                            print(f"[INFO] Start time found for activity in file {file_name}, '{start_time_dt}'")
+                            started = True  # Start collecting data
 
-                    if started:
-                        list_to_save.append((0, latitude, longitude, altitude, date_days, date_time_str))
+                        if started:
+                            list_to_save.append((1, latitude, longitude, altitude, date_days, date_time_str))
 
-                        if date_time_str == end_time:
-                            break  # Stop collecting data after end_time
+                            # Stop collecting data after end_time
+                            if date_time_dt == end_time_dt:
+                                print(f"[INFO] End time found for activity in file {file_name}, '{end_time_dt}'")
+                                break
 
+                    except Exception as parse_error:
+                        logging.error(f"Error parsing row {row}: {parse_error}")
+                        continue
 
-                print(f"fffffffffuuuucckckckckckckckckc {list_to_save}")
 
                 if list_to_save:
                     try:
@@ -164,8 +182,10 @@ class Gurjot:
                         
                 # Commit the transaction after processing each file
                 self.db_connection.commit()
+
         except Exception as e:
             logging.error(f"Error processing file {file_name}: {e}")
+
 
 
     # should return in format "date,time"
@@ -229,8 +249,9 @@ class Gurjot:
                         if self.check_date_time_exists2(start_date_time, trajectory_datetimes) and self.check_date_time_exists2(end_date_time, trajectory_datetimes):
                             print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
                             print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
-                            self.insert_trackpoints(start_date_time, end_date_time, plt_file_path)
                             self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
+                            self.insert_trackpoints(start_date_time, end_date_time, plt_file_path)
+                            return
                             break  # Move to the next label after finding both start and end
                     else:
                         continue  # Only runs if the inner loop wasn't broken
