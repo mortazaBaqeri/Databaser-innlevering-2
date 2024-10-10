@@ -4,7 +4,7 @@ import logging
 import datetime
 import csv
 import os
-from DbConnector import DbConnector
+from Backup.DbConnector import DbConnector
 
 
 class Trackpoint:

@@ -2,7 +2,7 @@ import os
 import mysql.connector
 import csv
 import time
-from DbConnector import DbConnector
+from Backup.DbConnector import DbConnector
 from tabulate import tabulate
 import pandas as pd
 

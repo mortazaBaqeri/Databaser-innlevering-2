@@ -1,4 +1,4 @@
-from DbConnector import DbConnector
+from Backup.DbConnector import DbConnector
 from tabulate import tabulate
 
 
