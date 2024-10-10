@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 import pandas as pd
 import fnmatch
+import logging
+import csv
 
 class Gurjot:
 
@@ -12,13 +14,12 @@ class Gurjot:
         self.db_connection = self.connection.db_connection
         self.cursor = self.connection.cursor
 
-    def create_table(self, table_name):
-        query = """CREATE TABLE IF NOT EXISTS %s (
+    def create_user_table(self):
+        query = """CREATE TABLE IF NOT EXISTS User (
                    id INT NOT NULL,
                    has_labels BOOLEAN DEFAULT FALSE, 
-                   PRIMARY KEY (id))
+                   PRIMARY KEY (id));
                 """
-        query = query.replace("%s", table_name)
         self.cursor.execute(query)
         self.db_connection.commit()
 
@@ -35,11 +36,11 @@ class Gurjot:
         self.db_connection.commit()
 
     def create_trackpoint_table(self):
-        query = """"CREATE TABLE IF NOT EXISTS Trackpoint (
-                    id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
+        query = """CREATE TABLE IF NOT EXISTS Trackpoint(
+                    id INT PRIMARY KEY AUTO_INCREMENT,
                     activity_id INT,
-                    lat DOUBLE,
-                    lon DOUBLE,
+                    latitude DOUBLE,
+                    longitude DOUBLE,
                     altitude DOUBLE,
                     date_days DOUBLE,
                     date_time DATETIME,
@@ -49,14 +50,12 @@ class Gurjot:
         self.db_connection.commit()
 
 
-    # Function to clean and format time from labels
     def clean_time_format(self, time_string):
         """Ensure the time string is in the correct format: YYYY/MM/DD HH:MM:SS"""
         return time_string.strip()
         
-    # Function to parse labels.txt without pandas
-    def parse_labels_file(self, labels_file_path):
-        # todo, make a hashmap for better performance
+
+    def parse_labels_file(self, labels_file_path):        # todo, make a hashmap for better performance
         labels = []
         with open(labels_file_path, 'r') as file:
             lines = file.readlines()
@@ -79,24 +78,94 @@ class Gurjot:
                 return sum(1 for _ in file) > 2500
             
 
-    # # returns [(date, time)]
-    # def extract_date_time_from_trejectories(self, file_path):
+    def insert_tpoints(self, trajectory_file):
+        # Traverse the data directory to find all trajectory files and insert data directly
+            try:
+                with open(trajectory_file, 'r') as file:
+                    reader = csv.reader(file)
+                    for _ in range(6):
+                        next(reader)  # Skip header lines
+                    
+                    for row in reader:            
+                        if len(row) < 7:
+                            continue  # Skip invalid lines
 
-    #     date_time_set = set()  # Using a set for fast lookup
+                        latitude = float(row[0])
+                        longitude = float(row[1])
+                        altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
+                        date_days = float(row[4])
+                        date_time = f"{row[5]} {row[6]}"
 
-    #     # Open the file and read its contents
-    #     with open(file_path, 'r') as file:
-    #         lines = file.readlines()
+                        print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time}")
 
-    #     # Skip the first 6 lines and process the remaining lines
-    #     for line in lines[6:]:
-    #         parts = line.split(',')
-    #         if len(parts) >= 7:  # Ensure the line has enough columns
-    #             date = parts[5].strip()  # Date is in the 6th column
-    #             time = parts[6].strip()  # Time is in the 7th column
-    #             date_time_set.add((date, time))  # Add (date, time) tuple to the set, example: ('2007-08-04', '04:11:30')
+                        try:
+                            # Convert date_time to a proper datetime format
+                            date_time = datetime.datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
+                            # Insert trackpoint directly into the Trackpoint table
+                            trackpoint_query = "INSERT INTO Trackpoint (latitude, longitude, altitude, date_days, date_time) VALUES (%s, %s, %s, %s, %s)"
+                            self.cursor.execute(trackpoint_query, (latitude, longitude, altitude, date_days, date_time.strftime("%Y-%m-%d %H:%M:%S")))
+                        except ValueError as ve:
+                            logging.warning(f"Skipping trackpoint due to datetime format error: {ve}")
+                            continue
+                # Commit the transaction after processing each file
+                self.db_connection.commit()
+            except Exception as e:
+                        logging.error(f"Error processing file {trajectory_file}: {e}")
 
-    #     return date_time_set
+
+    def insert_trackpoints(self, start_time, end_time, file_name):
+        print("Trying to insert trackpoints for file:", file_name)
+
+        try:
+            with open(file_name, 'r') as file:
+                reader = csv.reader(file)
+                for _ in range(6):
+                    next(reader)  # Skip header lines
+                    
+                print("File opened successfully. Processing trackpoints...")
+                list_to_save = []
+                started = False  # Flag to indicate when to start collecting data
+
+                for row in reader:
+                    if len(row) < 7:
+                        continue  # Skip invalid lines
+
+                    latitude = float(row[0])
+                    longitude = float(row[1])
+                    altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
+                    date_days = float(row[4])
+                    date_time_str = f"{row[5]} {row[6]}"
+
+                    print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time_str}")
+
+                    if date_time_str == start_time:
+                        started = True  # Start collecting data
+
+                    if started:
+                        list_to_save.append((0, latitude, longitude, altitude, date_days, date_time_str))
+
+                        if date_time_str == end_time:
+                            break  # Stop collecting data after end_time
+
+
+                print(f"fffffffffuuuucckckckckckckckckc {list_to_save}")
+
+                if list_to_save:
+                    try:
+                        # Insert all trackpoints into the Trackpoint table at once
+                        trackpoint_query = """
+                            INSERT INTO Trackpoint (
+                                activity_id, latitude, longitude, altitude, date_days, date_time
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                        """
+                        self.cursor.executemany(trackpoint_query, list_to_save)
+                    except Exception as db_error:
+                        logging.error(f"Error inserting trackpoints: {db_error}")
+                        
+                # Commit the transaction after processing each file
+                self.db_connection.commit()
+        except Exception as e:
+            logging.error(f"Error processing file {file_name}: {e}")
 
 
     # should return in format "date,time"
@@ -120,10 +189,7 @@ class Gurjot:
         return date_time_set
 
 
-    # def check_date_time_exists(date_time_set, query_date, query_time):
-    #     return (query_date, query_time) in date_time_set
-
-    def check_date_time_exists2(self, query_date_time, date_time_set):
+    def check_date_time_exists2(self, query_date_time, date_time_set) -> bool:
         return query_date_time in date_time_set
 
 
@@ -136,6 +202,7 @@ class Gurjot:
 
 
 
+    # Finner start og slutt tid -> Dette skal inn i activity 
     def search_and_match_plt_files(self, base_directory):
         user_id = base_directory.split("/")[4]
 
@@ -157,11 +224,12 @@ class Gurjot:
                         if self.has_more_than_2500_lines(plt_file_path):
                             continue
                         
-                        date_time = self.extract_date_time_from_trejectories2(plt_file_path)
+                        trajectory_datetimes = self.extract_date_time_from_trejectories2(plt_file_path)
                         
-                        if self.check_date_time_exists2(start_date_time, date_time) and self.check_date_time_exists2(end_date_time, date_time):
+                        if self.check_date_time_exists2(start_date_time, trajectory_datetimes) and self.check_date_time_exists2(end_date_time, trajectory_datetimes):
                             print(f"Found match for activity ... start: {start_date_time}, end: {end_date_time} for transportation mode {transportation_mode}")
                             print(f"It was found in file {plt_file_path} for user {base_directory.split("/")[4]}")
+                            self.insert_trackpoints(start_date_time, end_date_time, plt_file_path)
                             self.insert_activity(user_id, transportation_mode, start_date_time, end_date_time)
                             break  # Move to the next label after finding both start and end
                     else:
@@ -253,6 +321,9 @@ def main():
     try:
         program = Gurjot()
 
+        base_directory = "./dataset/dataset/Data/010/"
+
+
         program.drop_table("Trackpoint")
         program.drop_table("Activity")
         program.drop_table('User')
@@ -260,21 +331,16 @@ def main():
         # base_path = "./dataset/dataset/Data"  # Path to the Data directory with user folders
         # labeled_ids_path = "./dataset/dataset/labeled_ids.txt"  # Path to labeled_ids.txt
 
-        program.create_table('User')
+        program.create_user_table()
+        program.create_activity_table()
+        program.create_trackpoint_table()
+
+
         program.insert_users('./dataset/dataset/')
         program.update_user_table('./dataset/dataset/labeled_ids.txt')
-        program.create_activity_table()
 
-        base_directory = "./dataset/dataset/Data/001/"
         program.search_and_match_plt_files(base_directory)
 
-
-        # Insert and match activities with transportation modes
-        # program.insert_and_match_activities()
-
-        
-        # program.drop_table("Trackpoint")
-        # program.create_trackpoint_table()
 
 
 

@@ -4,13 +4,45 @@ import os
 from datetime import datetime
 import pandas as pd
 import fnmatch
+from trackpoint import Trackpoint
+import logging
+import csv
 
-class Tasks:
+class Tasks():
 
     def __init__(self):
         self.connection = DbConnector()
         self.db_connection = self.connection.db_connection
         self.cursor = self.connection.cursor
+
+    # def create_trackpoint_table(self):
+    #     query = """CREATE TABLE IF NOT EXISTS Trackpoint(
+    #                 id INT PRIMARY KEY AUTO_INCREMENT,
+    #                 activity_id INT,
+    #                 latitude DOUBLE,
+    #                 longitude DOUBLE,
+    #                 altitude DOUBLE,
+    #                 date_days DOUBLE,
+    #                 date_time DATETIME,
+    #                 FOREIGN KEY (activity_id) REFERENCES Activity(id));
+    #             """
+    #     self.cursor.execute(query)
+    #     self.db_connection.commit()
+
+    def create_trackpoint_table(self, table_name):
+        query = """CREATE TABLE IF NOT EXISTS %s (
+                    id INT PRIMARY KEY AUTO_INCREMENT,
+                    activity_id INT,
+                    latitude DOUBLE,
+                    longitude DOUBLE,
+                    altitude DOUBLE,
+                    date_days DOUBLE,
+                    date_time DATETIME,
+                    FOREIGN KEY (activity_id) REFERENCES Activity(id));
+                """
+        query = query.replace("%s", table_name)
+        self.cursor.execute(query)
+        self.db_connection.commit()
 
     def create_table(self, table_name):
         query = """CREATE TABLE IF NOT EXISTS %s (
@@ -24,7 +56,7 @@ class Tasks:
 
     def create_activity_table(self):
         query = """CREATE TABLE IF NOT EXISTS Activity (
-                     id INT PRIMARY KEY,
+                     id INT PRIMARY KEY AUTO_INCREMENT,
                      user_id INT,
                      transportation_mode VARCHAR(255),
                      start_date_time DATETIME,
@@ -34,19 +66,52 @@ class Tasks:
         self.cursor.execute(query)
         self.db_connection.commit()
 
-    def create_trackpoint_table(self):
-        query = """"CREATE TABLE IF NOT EXISTS Trackpoint (
-                    id INT PRIMARY KEY,
-                    activity_id INT,
-                    lat DOUBLE,
-                    lon DOUBLE,
-                    altitude DOUBLE,
-                    date_days DOUBLE,
-                    date_time DATETIME,
-                    FOREIGN KEY (activity_id) REFERENCES Activity(id));
-                """
-        self.cursor.execute(query)
-        self.db_connection.commit()
+
+    def insert_trackpoints(self, data_dir):
+        # Traverse the data directory to find all trajectory files and insert data directly
+        for root, dirs, files in os.walk(data_dir):
+            for file in files:
+                if file.endswith(".plt"):
+                    trajectory_file = os.path.join(root, file)
+                    print(f"trajectory_file: {trajectory_file}")
+
+                    if self.has_more_than_2500_lines(trajectory_file):
+                        logging.info(f"Skipping {trajectory_file} because it has more than 2500 lines")
+                        continue
+                    
+                    try:
+                        print("Trying to open file")
+                        with open(trajectory_file, 'r') as file:
+                            reader = csv.reader(file)
+                            for _ in range(6):
+                                next(reader)  # Skip header lines
+                            
+                            for row in reader:            
+                                if len(row) < 7:
+                                    continue  # Skip invalid lines
+
+                                latitude = float(row[0])
+                                longitude = float(row[1])
+                                altitude = int(float(row[3])) if int(float(row[3])) != -777 else None
+                                date_days = float(row[4])
+                                date_time = f"{row[5]} {row[6]}"
+
+                                print(f"Latitude: {latitude}, Longitude: {longitude}, Altitude: {altitude}, Date Days: {date_days}, Date Time: {date_time}")
+
+                                try:
+                                    # Convert date_time to a proper datetime format
+                                    date_time = datetime.datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
+                                    # Insert trackpoint directly into the Trackpoint table
+                                    trackpoint_query = "INSERT INTO Trackpoint (latitude, longitude, altitude, date_days, date_time) VALUES (%s, %s, %s, %s, %s)"
+                                    self.cursor.execute(trackpoint_query, (latitude, longitude, altitude, date_days, date_time.strftime("%Y-%m-%d %H:%M:%S")))
+                                except ValueError as ve:
+                                    logging.warning(f"Skipping trackpoint due to datetime format error: {ve}")
+                                    continue
+                        # Commit the transaction after processing each file
+                        self.db_connection.commit()
+                    except Exception as e:
+                        logging.error(f"Error processing file {trajectory_file}: {e}")
+
 
 
     def insert_users(self, root_path, table_name='User'):
@@ -202,13 +267,13 @@ class Tasks:
         self.db_connection.commit()
 
 
-    def has_more_than_2500_lines(self, plt_file_path):
-        with open(plt_file_path, 'r') as file:
-            # Skip the first 6 lines (header)
-            for _ in range(6):
-                next(file, None)
-            # Count remaining lines, return True if more than 2500
-            return sum(1 for _ in file) > 2500
+    # def has_more_than_2500_lines(self, plt_file_path):
+    #     with open(plt_file_path, 'r') as file:
+    #         # Skip the first 6 lines (header)
+    #         for _ in range(6):
+    #             next(file, None)
+    #         # Count remaining lines, return True if more than 2500
+    #         return sum(1 for _ in file) > 2500
 
 
     def drop_table(self, table_name):
@@ -254,25 +319,28 @@ def main():
     try:
         program = Tasks()
 
-        program.drop_table("Activity")
-
-
-        base_path = "./dataset/dataset/Data"  # Path to the Data directory with user folders
-        labeled_ids_path = "./dataset/dataset/labeled_ids.txt"  # Path to labeled_ids.txt
+        base_path = "./dataset/dataset"  # Path to the Data directory with user folders
+        dataPath = f"{base_path}/Data"  # Path to the Data directory with user folders
+        labeled_ids_path = f"{base_path}labeled_ids.txt"  # Path to labeled_ids.txt
             
-        program.drop_table('User')
-        program.create_table('User')
+
+        user = "User"
+        trackpoint = "Trackpoint"
+        activity = "Activity"
+
+        program.drop_table(user)
+        program.create_table(user)
         program.insert_users('./dataset/dataset/')
-        program.update_user_table('./dataset/dataset/labeled_ids.txt')
+        program.update_user_table(labeled_ids_path)
 
 
+        program.drop_table(activity)
         program.create_activity_table()
-        # Insert and match activities with transportation modes
         program.insert_and_match_activities()
-
         
-        # program.drop_table("Trackpoint")
-        # program.create_trackpoint_table()
+        program.drop_table(trackpoint)
+        program.create_trackpoint_table(trackpoint)
+        program.insert_trackpoints(data_dir=dataPath)
 
 
 
