@@ -271,62 +271,28 @@ class QA:
 
 
     def find_users_with_invalid_activities(self):
-        # SQL Query to get trackpoints, ordered by user_id, activity_id, and date_time
+        # SQL Query to get the count of invalid activities per user
         query = """
-        SELECT user_id, activity_id, date_time
-        FROM TrackPoint
-        JOIN Activity ON Activity.id = TrackPoint.activity_id
-        ORDER BY user_id, activity_id, date_time;
+        SELECT a.user_id, COUNT(DISTINCT a.id) AS invalid_activity_count
+        FROM Activity a
+        JOIN TrackPoint tp1 ON a.id = tp1.activity_id
+        JOIN TrackPoint tp2 ON tp1.id = tp2.id - 1 AND tp1.activity_id = tp2.activity_id
+        WHERE TIMESTAMPDIFF(MINUTE, tp1.date_time, tp2.date_time) >= 5
+        GROUP BY a.user_id
+        HAVING invalid_activity_count > 0;
         """
         
         # Execute the query
         self.cursor.execute(query)
-        trackpoints = self.cursor.fetchall()
-
-        # Dictionary to store the number of invalid activities per user
-        invalid_activities_per_user = {}
-        previous_point = None
-        current_activity = None
-        current_user = None
-        invalid_activity_ids = set()  # To store invalid activities that have already been flagged
-
-        # Iterate over trackpoints to determine invalid activities
-        for trackpoint in trackpoints:
-            user_id, activity_id, date_time = trackpoint
-
-            # Convert the date_time string to a datetime object
-            date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
-
-            # New activity or user
-            if activity_id != current_activity or user_id != current_user:
-                previous_point = date_time  # Set the first point in the new activity
-                current_activity = activity_id
-                current_user = user_id
-                continue
-
-            # Calculate time difference from previous trackpoint
-            time_difference = (date_time - previous_point).total_seconds() / 60.0  # Time difference in minutes
-
-            # If the time difference is greater than or equal to 5 minutes, mark the activity as invalid
-            if time_difference >= 5:
-                if activity_id not in invalid_activity_ids:
-                    # If the activity hasn't already been flagged as invalid, mark it
-                    invalid_activity_ids.add(activity_id)
-
-                    # Update the count of invalid activities for the user
-                    if user_id not in invalid_activities_per_user:
-                        invalid_activities_per_user[user_id] = 0
-                    invalid_activities_per_user[user_id] += 1
-
-            # Update the previous point to the current date_time
-            previous_point = date_time
+        results = self.cursor.fetchall()
 
         # Print the users with their number of invalid activities
         print("Users with Invalid Activities:")
         print("-------------------------------")
         print(f"{'User ID':<10} {'Invalid Activities':<20}")
-        for user_id, invalid_count in invalid_activities_per_user.items():
+        for user_id, invalid_count in results:
             print(f"{user_id:<10} {invalid_count:<20}")
+
 
     def find_users_in_forbidden_city(self):
         # Define the Forbidden City coordinates
