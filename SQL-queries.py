@@ -367,7 +367,6 @@ class QA:
         print("-------------------------------------------------")
         print(f"{'User ID':<10} {'Most Used Transportation Mode':<30}")
         for user_id, (most_used_mode, _) in sorted_users:
-            # Only print users with a valid transportation mode
             if most_used_mode and most_used_mode.strip().lower() != 'null':
                 print(f"{user_id:<10} {most_used_mode:<30}")
 
