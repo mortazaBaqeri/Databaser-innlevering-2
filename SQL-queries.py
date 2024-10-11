@@ -337,16 +337,15 @@ class QA:
 
 
     def find_users_most_used_transportation_mode(self):
-        # SQL Query to get transportation mode counts for each user
+        # SQL Query to get transportation mode counts for each user, excluding NULL and empty values
         query = """
         SELECT user_id, transportation_mode, COUNT(*) AS mode_count
         FROM Activity
-        WHERE transportation_mode IS NOT NULL
+        WHERE transportation_mode IS NOT NULL AND transportation_mode != ''
         GROUP BY user_id, transportation_mode
         ORDER BY user_id;
         """
         
-
         self.cursor.execute(query)
         results = self.cursor.fetchall()
 
@@ -361,16 +360,16 @@ class QA:
                 _, current_max_count = user_transportation_modes[user_id]
                 if mode_count > current_max_count:
                     user_transportation_modes[user_id] = (transportation_mode, mode_count)
-                elif mode_count == current_max_count:
-                    user_transportation_modes[user_id] = (transportation_mode, mode_count)
-
+        
         sorted_users = sorted(user_transportation_modes.items())
 
         print("Users and Their Most Used Transportation Mode:")
         print("-------------------------------------------------")
         print(f"{'User ID':<10} {'Most Used Transportation Mode':<30}")
         for user_id, (most_used_mode, _) in sorted_users:
-            print(f"{user_id:<10} {most_used_mode:<30}")
+            # Only print users with a valid transportation mode
+            if most_used_mode and most_used_mode.strip().lower() != 'null':
+                print(f"{user_id:<10} {most_used_mode:<30}")
 
 
 def main():
