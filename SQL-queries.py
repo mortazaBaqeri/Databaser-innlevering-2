@@ -2,6 +2,7 @@ import datetime
 import math
 from DbConnector import DbConnector
 from datetime import datetime
+import os
 
 class QA:
     def __init__(self):
@@ -376,7 +377,62 @@ def main():
     program = None
     try:
         program = QA()
-        program.find_users_with_invalid_activities()
+
+        while True:
+            width = os.get_terminal_size().columns 
+            print('-' * width)
+            print("\nSelect a task to run:")
+            print("1. Count Entities (Task 2.1)")
+            print("2. Average Activities per User (Task 2.2)")
+            print("3. Top 20 Users by Activity (Task 2.3)")
+            print("4. Find Users Who Took a Taxi (Task 2.4)")
+            print("5. Count Transportation Modes (Task 2.5)")
+            print("6. Year with Most Activities (Task 2.6a)")
+            print("7. Year with Most Recorded Hours (Task 2.6a)")
+            print("8. Compare Years for Most Activities and Hours (Task 2.6b)")
+            print("9. Total Distance Walked in 2008 by User 112 (Task 2.7)")
+            print("10. Top 20 Users by Altitude Gain (Task 2.8)")
+            print("11. Find Users with Invalid Activities (Task 2.9)")
+            print("12. Find Users in Forbidden City (Task 2.10)")
+            print("13. Find Users' Most Used Transportation Mode (Task 2.11)")
+            print("0. Exit")
+
+            choice = input("\nEnter the number of the task to run: ")
+            width = os.get_terminal_size().columns 
+            print('-' * width)
+
+            if choice == "1":
+                program.count_entities()
+            elif choice == "2":
+                program.average_activities_per_user()
+            elif choice == "3":
+                program.top_20_users_by_activity()
+            elif choice == "4":
+                program.find_users_who_took_taxi()
+            elif choice == "5":
+                program.count_transportation_modes()
+            elif choice == "6":
+                program.year_with_most_activities()
+            elif choice == "7":
+                program.year_with_most_recorded_hours()
+            elif choice == "8":
+                program.compare_years_for_most_activities_and_hours()
+            elif choice == "9":
+                program.total_distance_walked_2008_user_112()
+            elif choice == "10":
+                program.top_20_users_by_altitude_gain()
+            elif choice == "11":
+                program.find_users_with_invalid_activities()
+            elif choice == "12":
+                program.find_users_in_forbidden_city()
+            elif choice == "13":
+                program.find_users_most_used_transportation_mode()
+            elif choice == "0":
+                print("Exiting...")
+                break
+            else:
+                print("Invalid choice. Please try again.")
+
     finally:
         if program:
             program.connection.close_connection()
