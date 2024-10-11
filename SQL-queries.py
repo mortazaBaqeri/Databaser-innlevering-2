@@ -285,10 +285,13 @@ class QA:
     def find_users_with_invalid_activities(self):
         # SQL Query to get trackpoints, ordered by user_id, activity_id, and date_time
         query = """
-        SELECT user_id, activity_id, date_time
-        FROM Trackpoint
-        JOIN Activity ON Activity.id = Trackpoint.activity_id
-        ORDER BY user_id, activity_id, date_time;
+        SELECT a.user_id, COUNT(a.id) AS invalid_activity_count
+        FROM Activity a
+        JOIN TrackPoint tp1 ON a.id = tp1.activity_id
+        JOIN TrackPoint tp2 ON tp1.id = tp2.id - 1 AND tp1.activity_id = tp2.activity_id
+        WHERE TIMESTAMPDIFF(MINUTE, tp1.date_time, tp2.date_time) >= 5
+        GROUP BY a.user_id
+        HAVING invalid_activity_count > 0;
         """
         
         # Execute the query
